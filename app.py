@@ -105,6 +105,7 @@ def _download_to_local(url: str, selected: VideoFormat) -> None:
 
     st.success(f"Downloaded: {output_path.name}")
     st.caption(f"Saved to: {output_path}")
+    st.info("📝 Captions/subtitles have been embedded into the video (if available).")
 
     with Path(output_path).open("rb") as file:
         st.download_button(

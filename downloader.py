@@ -279,19 +279,33 @@ def download_video(
 
     unique_prefix = uuid.uuid4().hex[:8]
     options = _base_options(progress_hook)
+
+    postprocessors = []
+    if has_ffmpeg():
+        postprocessors.append(
+            {
+                "key": "FFmpegVideoConvertor",
+                "preferedformat": "mp4",
+            }
+        )
+        # Embed downloaded subtitles/captions into the MP4 container
+        postprocessors.append(
+            {
+                "key": "FFmpegEmbedSubtitle",
+            }
+        )
+
     options.update(
         {
             "format": build_format_selector(format_id),
             "outtmpl": str(destination / f"%(title).180B-{unique_prefix}.%(ext)s"),
             "merge_output_format": "mp4",
-            "postprocessors": [
-                {
-                    "key": "FFmpegVideoConvertor",
-                    "preferedformat": "mp4",
-                }
-            ]
-            if has_ffmpeg()
-            else [],
+            "postprocessors": postprocessors,
+            # --- Captions / Subtitles ---
+            "writesubtitles": True,           # download manual subtitles
+            "writeautomaticsub": True,        # fallback to auto-generated captions
+            "subtitleslangs": ["en.*", "en", "hi"],  # English + Hindi (add more as needed)
+            "subtitlesformat": "srt/best",    # prefer SRT format
         }
     )
 
@@ -317,7 +331,18 @@ def download_video(
     if not completed:
         raise VideoUnavailableError("The download finished, but the output file could not be found.")
 
-    return completed[0]
+    output_file = completed[0]
+
+    # Clean up standalone subtitle files (already embedded inside the MP4)
+    _SUBTITLE_EXTENSIONS = {".srt", ".vtt", ".ass", ".lrc", ".ttml", ".srv1", ".srv2", ".srv3", ".json3"}
+    for path in destination.glob(f"*-{unique_prefix}.*"):
+        if path.suffix.lower() in _SUBTITLE_EXTENSIONS:
+            try:
+                path.unlink()
+            except OSError:
+                pass
+
+    return output_file
 
 
 def threaded_download(
