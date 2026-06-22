@@ -4,8 +4,9 @@ import re
 import shutil
 import threading
 import uuid
-from functools import lru_cache
 from dataclasses import dataclass
+from functools import lru_cache
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Callable, Iterable
 
@@ -89,6 +90,11 @@ def has_ffmpeg() -> bool:
     return get_ffmpeg_location() is not None
 
 
+@lru_cache(maxsize=1)
+def _supports_browser_impersonation() -> bool:
+    return find_spec("curl_cffi") is not None
+
+
 def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     options: dict = {
         "quiet": True,
@@ -118,6 +124,8 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     ffmpeg_location = get_ffmpeg_location()
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
+    if _supports_browser_impersonation():
+        options["impersonate"] = "chrome"
     return options
 
 
@@ -125,6 +133,39 @@ def _map_download_error(exc: Exception) -> DownloaderError:
     message = str(exc)
     lower = message.lower()
 
+    if any(
+        term in lower
+        for term in (
+            "confirm you're not a bot",
+            "confirm you\u2019re not a bot",
+            "not a bot",
+            "unusual traffic",
+            "captcha",
+            "too many requests",
+            "http error 429",
+        )
+    ):
+        return VideoUnavailableError(
+            "YouTube is blocking requests from this hosted server. This commonly happens on Streamlit Cloud. "
+            "Try running the app locally, or deploy it on a server/network that YouTube allows."
+        )
+    if any(
+        term in lower
+        for term in (
+            "failed to establish a new connection",
+            "network is unreachable",
+            "name or service not known",
+            "temporary failure in name resolution",
+            "connection refused",
+            "connection reset",
+            "connection aborted",
+            "read timed out",
+            "timed out",
+        )
+    ):
+        return VideoUnavailableError(
+            "This server could not reach YouTube. Check the hosting network, firewall, or Streamlit Cloud logs."
+        )
     if any(term in lower for term in ("private video", "members-only", "sign in to confirm")):
         return VideoUnavailableError(
             "This video is private, members-only, or requires sign-in. It cannot be downloaded here."

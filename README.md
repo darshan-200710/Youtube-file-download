@@ -20,6 +20,12 @@ The app uses `imageio-ffmpeg` from `requirements.txt`, so you do not need to man
 py -m streamlit run app.py
 ```
 
+## Streamlit Cloud note
+
+The app works by making server-side requests to YouTube through `yt-dlp`. Streamlit Community Cloud may be blocked by YouTube's anti-bot checks because it runs from shared data-center IP addresses. If the hosted app says YouTube is blocking the hosted server, the URL is usually not the problem.
+
+This project includes `yt-dlp[curl-cffi]` so `yt-dlp` can use browser impersonation when available, but that is only a mitigation. For reliable downloads, run the app locally or deploy it on a server/network that YouTube allows.
+
 ## Run FastAPI API
 
 ```powershell
