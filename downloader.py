@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 import yt_dlp
-from yt_dlp.utils import DownloadError, ExtractorError
+from yt_dlp.networking.impersonate import ImpersonateTarget
+from yt_dlp.utils import YoutubeDLError
 
 
 ProgressCallback = Callable[[dict], None]
@@ -125,7 +126,7 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
     if _supports_browser_impersonation():
-        options["impersonate"] = "chrome"
+        options["impersonate"] = ImpersonateTarget.from_str("chrome")
     return options
 
 
@@ -259,7 +260,7 @@ def fetch_video_info(url: str) -> VideoInfo:
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             raw = ydl.extract_info(clean_url, download=False)
-    except (DownloadError, ExtractorError, ValueError) as exc:
+    except (YoutubeDLError, ValueError) as exc:
         raise _map_download_error(exc) from exc
 
     formats = _iter_video_formats(raw.get("formats", []))
@@ -340,7 +341,7 @@ def download_video(
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             ydl.download([clean_url])
-    except (DownloadError, ExtractorError, ValueError) as exc:
+    except (YoutubeDLError, ValueError) as exc:
         if not _is_format_unavailable_error(exc) or format_id == "best":
             raise _map_download_error(exc) from exc
 
@@ -348,7 +349,7 @@ def download_video(
         try:
             with yt_dlp.YoutubeDL(options) as ydl:
                 ydl.download([clean_url])
-        except (DownloadError, ExtractorError, ValueError) as retry_exc:
+        except (YoutubeDLError, ValueError) as retry_exc:
             raise _map_download_error(retry_exc) from retry_exc
 
     after = set(destination.glob(f"*-{unique_prefix}.*"))
