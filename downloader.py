@@ -104,7 +104,7 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
         "windowsfilenames": True,
         "restrictfilenames": False,
         "socket_timeout": 60,
-        "impersonate": True,
+        "impersonate": "chrome",
         "extractor_args": {"youtube": {"player_client": ["android"]}},
         "http_headers": {
             "User-Agent": (
