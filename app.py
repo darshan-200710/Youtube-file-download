@@ -86,7 +86,13 @@ def _download_to_local(url: str, selected: VideoFormat) -> None:
             status_slot.caption("Starting download...")
 
             start = time.monotonic()
-            output_path = download_video(url, selected.format_id, progress_hook=progress_hook)
+            output_path = download_video(
+                url,
+                selected.format_id,
+                progress_hook=progress_hook,
+                cookies_file=st.session_state.cookies_path,
+                player_client=st.session_state.player_client,
+            )
 
             percent, label = _format_progress({"status": "finished"})
             progress_bar.progress(percent)
@@ -120,10 +126,65 @@ def main() -> None:
     st.title("YouTube Video Downloader")
     st.caption("Fetch video details, choose a resolution, and download to this machine.")
 
+    # --- Sidebar: advanced options ---
+    with st.sidebar:
+        st.subheader("⚙️ Advanced")
+
+        # Cookies file upload
+        st.markdown("**Cookies (optional)**")
+        st.caption(
+            "Upload a Netscape-format cookies.txt file from your browser "
+            "to help bypass YouTube restrictions on data-center IPs."
+        )
+        uploaded_cookies = st.file_uploader(
+            "Choose cookies.txt",
+            type=["txt"],
+            label_visibility="collapsed",
+        )
+        if uploaded_cookies is not None:
+            cookies_dir = Path(__file__).resolve().parent / ".cookies"
+            cookies_dir.mkdir(parents=True, exist_ok=True)
+            cookies_path = cookies_dir / "cookies.txt"
+            cookies_path.write_bytes(uploaded_cookies.getvalue())
+            st.session_state.cookies_path = str(cookies_path)
+            st.success("Cookies loaded ✓")
+        else:
+            st.session_state.cookies_path = None
+
+        # Player client selector
+        st.markdown("**YouTube client**")
+        st.caption(
+            "Changing the client can sometimes bypass blocking. "
+            "Try 'android' if 'web' is blocked."
+        )
+        # Use a key so Streamlit preserves the widget state across reruns.
+        st.selectbox(
+            "Player client",
+            options=["web", "android", "ios"],
+            index=0,
+            label_visibility="collapsed",
+            key="player_client_selector",
+        )
+        st.session_state.player_client = st.session_state.player_client_selector
+
+        st.divider()
+        st.markdown(
+            "### 💡 Tips\n"
+            "- **Run locally** for best results; Streamlit Cloud IPs are often blocked by YouTube.\n"
+            "- Upload a **cookies.txt** (exported from your browser while logged into YouTube) "
+            "to bypass the block.\n"
+            "- Switch the **YouTube client** to 'android' if 'web' doesn't work."
+        )
+
+    # --- Main area ---
     if "video_info" not in st.session_state:
         st.session_state.video_info = None
     if "last_url" not in st.session_state:
         st.session_state.last_url = ""
+    if "cookies_path" not in st.session_state:
+        st.session_state.cookies_path = None
+    if "player_client" not in st.session_state:
+        st.session_state.player_client = "web"
 
     url = st.text_input("YouTube URL", placeholder="https://www.youtube.com/watch?v=...")
 
@@ -131,7 +192,11 @@ def main() -> None:
     if fetch_clicked:
         try:
             with st.spinner("Fetching video info..."):
-                st.session_state.video_info = fetch_video_info(url)
+                st.session_state.video_info = fetch_video_info(
+                    url,
+                    cookies_file=st.session_state.cookies_path,
+                    player_client=st.session_state.player_client,
+                )
                 st.session_state.last_url = url
         except DownloaderError as exc:
             st.session_state.video_info = None

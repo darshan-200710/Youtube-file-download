@@ -17,6 +17,9 @@ env/
 # Downloaded files (don't commit user downloads)
 downloads/
 
+# Uploaded cookies (contains browser session data)
+.cookies/
+
 # OS
 .DS_Store
 Thumbs.db
