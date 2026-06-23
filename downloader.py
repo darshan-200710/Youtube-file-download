@@ -6,12 +6,10 @@ import threading
 import uuid
 from dataclasses import dataclass
 from functools import lru_cache
-from importlib.util import find_spec
 from pathlib import Path
 from typing import Callable, Iterable
 
 import yt_dlp
-from yt_dlp.networking.impersonate import ImpersonateTarget
 from yt_dlp.utils import YoutubeDLError
 
 
@@ -91,11 +89,6 @@ def has_ffmpeg() -> bool:
     return get_ffmpeg_location() is not None
 
 
-@lru_cache(maxsize=1)
-def _supports_browser_impersonation() -> bool:
-    return find_spec("curl_cffi") is not None
-
-
 def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     options: dict = {
         "quiet": True,
@@ -125,8 +118,6 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     ffmpeg_location = get_ffmpeg_location()
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
-    if _supports_browser_impersonation():
-        options["impersonate"] = ImpersonateTarget.from_str("chrome")
     return options
 
 
