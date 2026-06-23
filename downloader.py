@@ -89,25 +89,23 @@ def has_ffmpeg() -> bool:
     return get_ffmpeg_location() is not None
 
 
-def _base_options(
-    progress_hook: ProgressCallback | None = None,
-    cookies_file: str | None = None,
-    player_client: str | None = None,
-) -> dict:
+def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     options: dict = {
         "quiet": True,
         "no_warnings": True,
         "noplaylist": True,
-        "retries": 10,
-        "fragment_retries": 10,
-        "extractor_retries": 5,
-        "file_access_retries": 5,
+        "retries": 15,
+        "fragment_retries": 15,
+        "extractor_retries": 10,
+        "file_access_retries": 10,
         "concurrent_fragment_downloads": 1,
         "continuedl": True,
         "nopart": False,
         "windowsfilenames": True,
         "restrictfilenames": False,
         "socket_timeout": 60,
+        "impersonate": True,
+        "extractor_args": {"youtube": {"player_client": ["android"]}},
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -119,10 +117,6 @@ def _base_options(
     }
     if progress_hook:
         options["progress_hooks"] = [progress_hook]
-    if cookies_file:
-        options["cookiefile"] = cookies_file
-    if player_client:
-        options["extractor_args"] = {"youtube": {"player_client": [player_client]}}
     ffmpeg_location = get_ffmpeg_location()
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
@@ -154,9 +148,8 @@ def _map_download_error(exc: Exception) -> DownloaderError:
         )
     ):
         return VideoUnavailableError(
-            "YouTube is blocking requests from this hosted server. This commonly happens on Streamlit Cloud. "
-            "Try uploading a cookies.txt file from your browser (sidebar), use a proxy, "
-            "or run the app locally instead."
+            "YouTube is blocking this server (Streamlit Cloud uses data-center IPs). "
+            "Try running the app on your own computer for best results."
         )
 
     # --- Network / connectivity ---
@@ -199,11 +192,8 @@ def _map_download_error(exc: Exception) -> DownloaderError:
             "That resolution is not currently available for this video. Click Fetch Info again and choose another resolution."
         )
 
-    # --- Fallback with original error for debugging ---
-    return VideoUnavailableError(
-        f"Could not process this video. Check the URL and try again.\n\n"
-        f"Technical details: {message}"
-    )
+    # --- Fallback ---
+    return VideoUnavailableError(f"Could not process this video: {message}")
 
 
 def _format_filesize(size: int | None) -> str:
@@ -271,18 +261,10 @@ def _iter_video_formats(raw_formats: Iterable[dict]) -> list[VideoFormat]:
     return sorted_results
 
 
-def fetch_video_info(
-    url: str,
-    cookies_file: str | None = None,
-    player_client: str | None = None,
-) -> VideoInfo:
+def fetch_video_info(url: str) -> VideoInfo:
     clean_url = validate_url(url)
 
-    options = _base_options(
-        progress_hook=None,
-        cookies_file=cookies_file,
-        player_client=player_client,
-    )
+    options = _base_options()
     options.update({"skip_download": True, "format": "bestvideo+bestaudio/best"})
 
     try:
@@ -342,19 +324,13 @@ def download_video(
     format_id: str,
     progress_hook: ProgressCallback | None = None,
     output_dir: Path | None = None,
-    cookies_file: str | None = None,
-    player_client: str | None = None,
 ) -> Path:
     clean_url = validate_url(url)
     destination = output_dir or DOWNLOAD_DIR
     destination.mkdir(parents=True, exist_ok=True)
 
     unique_prefix = uuid.uuid4().hex[:8]
-    options = _base_options(
-        progress_hook=progress_hook,
-        cookies_file=cookies_file,
-        player_client=player_client,
-    )
+    options = _base_options(progress_hook=progress_hook)
     options.update(
         {
             "format": build_format_selector(format_id),
