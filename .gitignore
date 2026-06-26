@@ -30,6 +30,11 @@ Thumbs.db
 *.suo
 *.user
 
+# Replit
+.replit
+replit.nix
+run_local.bat
+
 # Environment variables
 .env
 .env.*
