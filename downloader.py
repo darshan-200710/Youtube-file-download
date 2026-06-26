@@ -90,6 +90,8 @@ def has_ffmpeg() -> bool:
 
 
 def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
+    import os
+
     options: dict = {
         "quiet": True,
         "no_warnings": True,
@@ -104,16 +106,34 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
         "windowsfilenames": True,
         "restrictfilenames": False,
         "socket_timeout": 60,
-        "extractor_args": {"youtube": {"player_client": ["android"]}},
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["web", "android", "ios", "tv_embedded", "mweb"],
+                "js_runtimes": ["node"],
+            }
+        },
         "http_headers": {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
+                "Chrome/126.0.0.0 Safari/537.36"
             ),
             "Accept-Language": "en-US,en;q=0.9",
         },
     }
+
+    cookie_file = os.environ.get("YOUTUBE_COOKIE_FILE")
+    if cookie_file and Path(cookie_file).exists():
+        options["cookiefile"] = cookie_file
+
+    po_token = os.environ.get("YOUTUBE_PO_TOKEN")
+    if po_token:
+        options["extractor_args"]["youtube"]["po_token"] = po_token
+
+    visitor_data = os.environ.get("YOUTUBE_VISITOR_DATA")
+    if visitor_data:
+        options["extractor_args"]["youtube"]["visitor_data"] = visitor_data
+
     if progress_hook:
         options["progress_hooks"] = [progress_hook]
     ffmpeg_location = get_ffmpeg_location()
@@ -144,11 +164,19 @@ def _map_download_error(exc: Exception) -> DownloaderError:
             "forbidden",
             "visitor",
             "bot",
+            "sign in to confirm you",
+            "this video is not available",
+            "video unavailable",
         )
     ):
         return VideoUnavailableError(
-            "YouTube is blocking this server (Streamlit Cloud uses data-center IPs). "
-            "Try running the app on your own computer for best results."
+            "YouTube is blocking this request. This commonly happens on Streamlit Cloud "
+            "because it uses data-center IPs that YouTube flags as automated traffic.\n\n"
+            "To fix this in production:\n"
+            "1. Run the app locally on your own computer (recommended)\n"
+            "2. Or deploy to a VPS with a residential IP\n"
+            "3. Or set YOUTUBE_COOKIE_FILE env var with exported YouTube cookies\n"
+            "4. Or set YOUTUBE_PO_TOKEN and YOUTUBE_VISITOR_DATA env vars"
         )
 
     # --- Network / connectivity ---

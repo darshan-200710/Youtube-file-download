@@ -1,83 +1,81 @@
 # YouTube Video Downloader
 
-FastAPI + Streamlit + yt-dlp downloader with metadata lookup, resolution selection, graceful error messages, and local file output.
+A Streamlit app to download YouTube videos. Works best when run locally due to YouTube's anti-bot measures blocking data-center IPs.
 
-## Setup (Local)
+## Quick Start (Local - Recommended)
 
-```powershell
-cd "D:\projects\yt do"
-py -m venv .venv
-.\\.venv\\Scripts\\Activate.ps1
-py -m pip install --upgrade pip
-py -m pip install -r requirements.txt
+```bash
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-The app uses `imageio-ffmpeg` from `requirements.txt`, so you do not need to manually add `ffmpeg` to Windows `PATH`. YouTube often serves high-resolution video and audio as separate streams, and ffmpeg is needed to merge them.
+## The YouTube Blocking Problem
 
-## Run Streamlit UI (Local)
+**YouTube blocks requests from data-center IPs** (AWS, GCP, Azure, Streamlit Cloud, etc.). This is why you see:
 
-```powershell
-py -m streamlit run app.py
+> "YouTube is blocking this server (Streamlit Cloud uses data-center IPs). Try running the app on your own computer for best results."
+
+### Solutions for Production Deployment
+
+#### Option 1: Run Locally (Best)
+Run on your own computer - residential IPs work perfectly.
+
+#### Option 2: VPS with Residential Proxy
+Deploy to a VPS and route traffic through a residential proxy service.
+
+#### Option 3: Provide YouTube Cookies (Streamlit Cloud)
+Export cookies from your browser and add them as a secret:
+
+1. Install "Get cookies.txt LOCALLY" browser extension
+2. Export YouTube cookies to `cookies.txt`
+3. On Streamlit Cloud: Settings → Secrets → Add `YOUTUBE_COOKIE_FILE` with the file content
+4. Or base64 encode the file and decode at runtime
+
+#### Option 4: PO Token + Visitor Data (Advanced)
+Get Proof-of-Origin tokens from a logged-in session:
+
+```bash
+# Set these as environment variables/secrets
+YOUTUBE_PO_TOKEN="your_po_token"
+YOUTUBE_VISITOR_DATA="your_visitor_data"
 ```
 
-## Deploy to Streamlit Cloud
+## Project Structure
 
-### Step 1: Push to GitHub
+```
+├── app.py           # Streamlit UI
+├── downloader.py    # yt-dlp wrapper with anti-bot measures
+├── api.py           # FastAPI backend (optional)
+├── main.py          # Entry point
+├── requirements.txt
+└── .streamlit/config.toml
+```
 
-1. Create a **public** GitHub repository (e.g., `Youtube-file-download`).
-2. Push all project files to the `main` branch:
-   ```powershell
-   git init
-   git add .
-   git commit -m "Initial commit"
-   git remote add origin https://github.com/YOUR_USERNAME/Youtube-file-download.git
-   git branch -M main
-   git push -u origin main
+## Anti-Bot Measures Included
+
+- Multiple player clients: `android`, `web`, `tv_embedded`, `ios`, `mweb`
+- Full browser headers (User-Agent, Accept, Sec-Fetch-*, etc.)
+- Cookie file support via `YOUTUBE_COOKIE_FILE`
+- PO Token support via `YOUTUBE_PO_TOKEN`
+- Visitor Data support via `YOUTUBE_VISITOR_DATA`
+- Aggressive retries and timeouts
+- Format fallback logic
+
+## Deploying to Streamlit Cloud
+
+1. Push to GitHub
+2. Connect repo to Streamlit Cloud
+3. Add secrets in Settings → Secrets:
+   ```toml
+   YOUTUBE_COOKIE_FILE = """<base64_encoded_cookies>"""
+   # OR
+   YOUTUBE_PO_TOKEN = "your_token"
+   YOUTUBE_VISITOR_DATA = "your_data"
    ```
+4. Deploy
 
-### Step 2: Deploy on Streamlit Cloud
+**Note:** Even with cookies/tokens, Streamlit Cloud's shared IPs may still get rate-limited. Local usage is most reliable.
 
-1. Go to [share.streamlit.io](https://share.streamlit.io/) and sign in with your GitHub account.
-2. Click **"New app"**.
-3. Select your repository (`YOUR_USERNAME/Youtube-file-download`).
-4. Branch: `main`.
-5. Main file path: `app.py`.
-6. Click **"Deploy"**.
+## License
 
-**Important:** Make sure your repository is **public** (Streamlit Cloud can deploy from private repos too, but it requires additional OAuth permissions).
-
-## ⚠️ Streamlit Cloud & YouTube Blocking
-
-YouTube often blocks requests from data-center IP addresses (like those used by Streamlit Cloud). If you see the error:
-> *"YouTube is blocking requests from this hosted server"*
-
-Here are your options:
-
-### Option 1: Upload browser cookies (easiest)
-1. Install a browser extension like **"Get cookies.txt LOCALLY"** (Chrome/Firefox).
-2. While logged into YouTube, export your cookies as `cookies.txt` (Netscape format).
-3. In the Streamlit app sidebar, upload the `cookies.txt` file.
-4. Try fetching the video info again.
-
-### Option 2: Switch YouTube client
-In the sidebar, change the **YouTube client** from `web` to `android` and try again.
-
-### Option 3: Run locally
-For reliable downloads, run the app on your local machine.
-
-### Option 4: Use a residential proxy
-Deploy the app on a server with residential IPs (not data-center IPs).
-
-## Run FastAPI API (Local)
-
-```powershell
-py -m uvicorn api:app --reload
-```
-
-Endpoints:
-
-- `GET /health`
-- `POST /info` with `{ "url": "https://www.youtube.com/watch?v=..." }`
-- `POST /download` with `{ "url": "...", "format_id": "..." }`
-
-Downloaded files are saved in the local `downloads` folder.
+MIT
