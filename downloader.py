@@ -89,7 +89,15 @@ def has_ffmpeg() -> bool:
     return get_ffmpeg_location() is not None
 
 
-def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
+_CLIENT_TRIES = [
+    ["tv_embedded"],
+    ["android"],
+    ["web"],
+    ["mweb"],
+]
+
+
+def _base_options(progress_hook: ProgressCallback | None = None, player_client: list[str] | None = None) -> dict:
     import os
 
     options: dict = {
@@ -108,8 +116,7 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
         "socket_timeout": 60,
         "extractor_args": {
             "youtube": {
-                "player_client": ["web", "android", "ios", "tv_embedded", "mweb"],
-                "js_runtimes": ["node"],
+                "player_client": player_client or ["tv_embedded"],
             }
         },
         "http_headers": {
@@ -140,6 +147,23 @@ def _base_options(progress_hook: ProgressCallback | None = None) -> dict:
     if ffmpeg_location:
         options["ffmpeg_location"] = ffmpeg_location
     return options
+
+
+def _try_with_fallback(base_url: str, setup_fn, error_fn):
+    """Try extraction with multiple player clients until one works."""
+    last_exc = None
+    for clients in _CLIENT_TRIES:
+        try:
+            options = _base_options(player_client=clients)
+            setup_fn(options)
+            with yt_dlp.YoutubeDL(options) as ydl:
+                return ydl.extract_info(base_url, download=False)
+        except (YoutubeDLError, ValueError) as exc:
+            last_exc = exc
+            if "Requested format is not available" not in str(exc):
+                break
+    if last_exc:
+        raise error_fn(last_exc) from last_exc
 
 
 def _map_download_error(exc: Exception) -> DownloaderError:
@@ -291,14 +315,10 @@ def _iter_video_formats(raw_formats: Iterable[dict]) -> list[VideoFormat]:
 def fetch_video_info(url: str) -> VideoInfo:
     clean_url = validate_url(url)
 
-    options = _base_options()
-    options.update({"skip_download": True, "format": "bestvideo+bestaudio/best"})
+    def setup(opts):
+        opts.update({"skip_download": True, "format": "bestvideo+bestaudio/best"})
 
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            raw = ydl.extract_info(clean_url, download=False)
-    except (YoutubeDLError, ValueError) as exc:
-        raise _map_download_error(exc) from exc
+    raw = _try_with_fallback(clean_url, setup, _map_download_error)
 
     formats = _iter_video_formats(raw.get("formats", []))
     if not formats:
@@ -357,9 +377,9 @@ def download_video(
     destination.mkdir(parents=True, exist_ok=True)
 
     unique_prefix = uuid.uuid4().hex[:8]
-    options = _base_options(progress_hook=progress_hook)
-    options.update(
-        {
+
+    def setup(opts):
+        opts.update({
             "format": build_format_selector(format_id),
             "outtmpl": str(destination / f"%(title).180B-{unique_prefix}.%(ext)s"),
             "merge_output_format": "mp4",
@@ -371,23 +391,32 @@ def download_video(
             ]
             if has_ffmpeg()
             else [],
-        }
-    )
+        })
 
     before = set(destination.glob(f"*-{unique_prefix}.*"))
-    try:
-        with yt_dlp.YoutubeDL(options) as ydl:
-            ydl.download([clean_url])
-    except (YoutubeDLError, ValueError) as exc:
-        if not _is_format_unavailable_error(exc) or format_id == "best":
-            raise _map_download_error(exc) from exc
-
-        options["format"] = build_format_selector("best")
+    last_exc = None
+    for clients in _CLIENT_TRIES:
+        opts = _base_options(progress_hook=progress_hook, player_client=clients)
+        setup(opts)
         try:
-            with yt_dlp.YoutubeDL(options) as ydl:
+            with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([clean_url])
-        except (YoutubeDLError, ValueError) as retry_exc:
-            raise _map_download_error(retry_exc) from retry_exc
+            break
+        except (YoutubeDLError, ValueError) as exc:
+            last_exc = exc
+            if "Requested format is not available" in str(exc) and format_id != "best":
+                opts["format"] = build_format_selector("best")
+                try:
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        ydl.download([clean_url])
+                    break
+                except (YoutubeDLError, ValueError) as retry_exc:
+                    last_exc = retry_exc
+            continue
+    else:
+        if last_exc:
+            raise _map_download_error(last_exc) from last_exc
+        raise VideoUnavailableError("Could not download the video with any YouTube client.")
 
     after = set(destination.glob(f"*-{unique_prefix}.*"))
     completed = sorted(after - before, key=lambda path: path.stat().st_mtime, reverse=True)
